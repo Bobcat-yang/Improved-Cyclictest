@@ -1,7 +1,6 @@
 # Improved-Cyclictest
 We can modify the cyclictest to achieve our own testing purposes.  
 The current program can measure latency and jitter, and display the test results through histograms.  
-
 After cloning this file locally, follow the following steps to test.
 
 ## Usage
