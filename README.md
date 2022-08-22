@@ -15,6 +15,7 @@ sudo apt-get install gnuplot
 ### Compile
 
 ``` bash
+cd Improved-Cyclictest
 make all
 sudo make install
 ```
