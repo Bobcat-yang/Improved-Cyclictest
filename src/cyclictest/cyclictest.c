@@ -167,6 +167,10 @@ struct thread_stat {
 	long max_j;
 	long act_j;
 	double avg_j;
+	long *hist_array_j;
+	long *outliers_j;
+	long hist_overflow_j;
+	long num_outliers_j;
     //*********  bottom
 
 	long *values;
@@ -1259,6 +1263,16 @@ static void *timerthread(void *param)
 			} else {
 				stat->hist_array[diff]++;
 			}
+			//******top
+			if(jitter >= histogram){
+				stat->hist_overflow_j++;
+				if (stat->num_outliers_j < histogram)
+					stat->outliers_j[stat->num_outliers_j++] = stat->cycles;
+			}	
+			else{
+				stat->hist_array_j[jitter]++;
+			}
+			//******bottom
 		}
 
 		stat->cycles++;
@@ -1999,7 +2013,7 @@ static void print_hist(struct thread_param *par[], int nthreads)
 {
 	int i, j;
 	unsigned long long int log_entries[nthreads+1];
-	unsigned long maxmax, alloverflows;
+	unsigned long maxmax, maxmax_j, alloverflows,alloverflows_j;
 	FILE *fd;
 
 	bzero(log_entries, sizeof(log_entries));
@@ -2059,6 +2073,29 @@ static void print_hist(struct thread_param *par[], int nthreads)
 	if (histofall && nthreads > 1)
 		fprintf(fd, " %05lu", maxmax);
 	fprintf(fd, "\n");
+	
+	
+	fprintf(fd, "# Histogram Overflows of Latency:");
+	alloverflows = 0;
+	for (j = 0; j < nthreads; j++) {
+		fprintf(fd, " %05lu", par[j]->stats->hist_overflow);
+		alloverflows += par[j]->stats->hist_overflow;
+	}
+	if (histofall && nthreads > 1)
+		fprintf(fd, " %05lu", alloverflows);
+	fprintf(fd, "\n");
+
+	fprintf(fd, "# Histogram Overflow of Latency at cycle number:\n");
+	for (i = 0; i < nthreads; i++) {
+		fprintf(fd, "# Thread %d:", i);
+		for (j = 0; j < par[i]->stats->num_outliers; j++)
+			fprintf(fd, " %05lu", par[i]->stats->outliers[j]);
+		if (par[i]->stats->num_outliers < par[i]->stats->hist_overflow)
+			fprintf(fd, " # %05lu others", par[i]->stats->hist_overflow - par[i]->stats->num_outliers);
+		fprintf(fd, "\n");
+	}
+	fprintf(fd, "\n");
+	
 
 	//********************************* top
 	fprintf(fd, "# Jitter\n");
@@ -2070,14 +2107,9 @@ static void print_hist(struct thread_param *par[], int nthreads)
 
 		for (j = 0; j < nthreads; j++) {
 			unsigned long curr_jitter=0;
-			if(i>0){
-				if(par[j]->stats->hist_array[i] > par[j]->stats->hist_array[i-1]){
-					curr_jitter=par[j]->stats->hist_array[i] - par[j]->stats->hist_array[i-1];
-				}
-				else {
-					curr_jitter=par[j]->stats->hist_array[i-1] - par[j]->stats->hist_array[i];
-				}
-			}
+			//if(i>0){
+			curr_jitter=par[j]->stats->hist_array_j[i];
+			//}
 			fprintf(fd, "%06lu", curr_jitter);
 			if (j < nthreads - 1)
 				fprintf(fd, "\t");
@@ -2109,45 +2141,44 @@ static void print_hist(struct thread_param *par[], int nthreads)
 	fprintf(fd, "\n");
 	
 	fprintf(fd, "# Max Jitters:");
-	maxmax = 0;
+	maxmax_j = 0;
 	for (j = 0; j < nthreads; j++) {
 		fprintf(fd, " %05lu", par[j]->stats->max_j);
-		/*
-		if (par[j]->stats->max > maxmax)
-			maxmax = par[j]->stats->max;
-		*/
+		
+		if (par[j]->stats->max_j > maxmax_j)
+			maxmax_j = par[j]->stats->max_j;
+		
 	}
-	/*
+	
 	if (histofall && nthreads > 1)
-		fprintf(fd, " %05lu", maxmax);
-	*/
+		fprintf(fd, " %05lu", maxmax_j);
+	
 	fprintf(fd, "\n");
 
-	//********************************* bottom
-
-
-
-	fprintf(fd, "# Histogram Overflows:");
-	alloverflows = 0;
+	
+	fprintf(fd, "# Histogram Overflows of Jitter:");
+	alloverflows_j = 0;
 	for (j = 0; j < nthreads; j++) {
-		fprintf(fd, " %05lu", par[j]->stats->hist_overflow);
-		alloverflows += par[j]->stats->hist_overflow;
+		fprintf(fd, " %05lu", par[j]->stats->hist_overflow_j);
+		alloverflows_j += par[j]->stats->hist_overflow_j;
 	}
 	if (histofall && nthreads > 1)
-		fprintf(fd, " %05lu", alloverflows);
+		fprintf(fd, " %05lu", alloverflows_j);
 	fprintf(fd, "\n");
 
-	fprintf(fd, "# Histogram Overflow at cycle number:\n");
+	fprintf(fd, "# Histogram Overflow of Jitter at cycle number:\n");
 	for (i = 0; i < nthreads; i++) {
 		fprintf(fd, "# Thread %d:", i);
-		for (j = 0; j < par[i]->stats->num_outliers; j++)
-			fprintf(fd, " %05lu", par[i]->stats->outliers[j]);
-		if (par[i]->stats->num_outliers < par[i]->stats->hist_overflow)
-			fprintf(fd, " # %05lu others", par[i]->stats->hist_overflow - par[i]->stats->num_outliers);
+		for (j = 0; j < par[i]->stats->num_outliers_j; j++)
+			fprintf(fd, " %05lu", par[i]->stats->outliers_j[j]);
+		if (par[i]->stats->num_outliers_j < par[i]->stats->hist_overflow_j)
+			fprintf(fd, " # %05lu others", par[i]->stats->hist_overflow_j - par[i]->stats->num_outliers_j);
 		fprintf(fd, "\n");
 	}
 	fprintf(fd, "\n");
-
+	
+	//********************************* bottom
+	
 	if (use_histfile)
 		fclose(fd);
 }
@@ -2538,6 +2569,15 @@ int main(int argc, char **argv)
 				      histogram, i);
 			memset(stat->hist_array, 0, bufsize);
 			memset(stat->outliers, 0, bufsize);
+			//**********top
+			stat->hist_array_j = threadalloc(bufsize, node);
+			stat->outliers_j = threadalloc(bufsize, node);
+			if (stat->hist_array_j == NULL || stat->outliers_j == NULL)
+				fatal("failed to allocate histogram of size %d on node %d\n",
+				      histogram, i);
+			memset(stat->hist_array_j, 0, bufsize);
+			memset(stat->outliers_j, 0, bufsize);
+			//**********bottom
 		}
 
 		if (verbose) {
@@ -2686,6 +2726,10 @@ int main(int argc, char **argv)
 		for (i = 0; i < num_threads; i++) {
 			threadfree(statistics[i]->hist_array, histogram*sizeof(long), parameters[i]->node);
 			threadfree(statistics[i]->outliers, histogram*sizeof(long), parameters[i]->node);
+			//*******top
+			threadfree(statistics[i]->hist_array_j, histogram*sizeof(long), parameters[i]->node);
+			threadfree(statistics[i]->outliers_j, histogram*sizeof(long), parameters[i]->node);
+			//*******bottom
 		}
 	}
 
